@@ -612,6 +612,22 @@ services:
         condition: any
         delay: 10s
         max_attempts: 5
+      labels:
+        # Browser WebRTC signaling: Traefik routes the public wss endpoint
+        # (LIVEKIT_PUBLIC_URL = wss://agente-dev.../livekit) to livekit-server:7880.
+        # Without these labels /livekit/* fell through to the sdr-agent catch-all
+        # router and returned 404 (browser handshake failed). priority 10000 wins
+        # over the sdr-agent Host() catch-all; stripprefix removes /livekit so the
+        # server sees /rtc, /rtc/validate, etc.
+        traefik.enable: "true"
+        traefik.http.routers.sdr-livekit.rule: "Host(`agente-dev.domineseunegocio.com.br`) && PathPrefix(`/livekit`)"
+        traefik.http.routers.sdr-livekit.entrypoints: "websecure"
+        traefik.http.routers.sdr-livekit.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdr-livekit.service: "sdr-livekit"
+        traefik.http.routers.sdr-livekit.priority: "10000"
+        traefik.http.routers.sdr-livekit.middlewares: "sdr-livekit-stripprefix"
+        traefik.http.middlewares.sdr-livekit-stripprefix.stripprefix.prefixes: "/livekit"
+        traefik.http.services.sdr-livekit.loadbalancer.server.port: "7880"
 
   livekit-sip:
     image: livekit/sip:latest
