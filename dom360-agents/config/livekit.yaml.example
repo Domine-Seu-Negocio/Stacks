@@ -18,9 +18,11 @@ rtc:
   # (the "overlapping address rewrite rule" warning) that cause intermittent
   # media — calls connecting sometimes and dropping mid-session. Local interface
   # candidates are still gathered, so the in-overlay worker uses the local path.
+  # node_ip pins the advertised media IP for this LiveKit build (1.12.0).
+  # NOTE: the field is `node_ip` (singular), NOT `nat_1_to_1_ips` — the latter
+  # is rejected by this build ("field nat_1_to_1_ips not found in RTCConfig").
   use_external_ip: false
-  nat_1_to_1_ips:
-    - REPLACE_NODE_PUBLIC_IP
+  node_ip: REPLACE_NODE_PUBLIC_IP
 
 redis:
   address: livekit-redis:6379

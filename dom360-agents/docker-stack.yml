@@ -9,7 +9,7 @@
 #   A `range:range/udp` short form would default to ingress and break media.
 #
 # External Swarm configs (bootstrap once, see README; secret-bearing → not in git):
-#   livekit_config     -> dom360_livekit_config_20260602_nat (nat_1_to_1 media fix)
+#   livekit_config     -> dom360_livekit_config_20260602_nodeip (node_ip media fix)
 #   livekit_sip_config -> dom360_livekit_sip_config
 #
 # Image is pinned by tag — bump it on sdr-agent AND voice-agent (same image),
