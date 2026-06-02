@@ -1,27 +1,25 @@
-# SDK stack
+# SDK stack (`sdk`)
 
-DOM360 SDK on Docker Swarm: the **Rust v2 backend** (`api-v2`) and the
-**frontend**. Mirrors `SDK/docker-stack.yml` — this folder is the deploy source
-of truth. Deploy-only: images come from the registry (CI builds them), so the
-`build:` blocks from the source compose are intentionally dropped here.
+DOM360 SDK on Docker Swarm: **Rust v2 backend** (`api-v2`) + **frontend**.
+**This folder mirrors the live Portainer stack `sdk`** (endpoint `primary`) — it
+is the deploy source of truth. Deploy-only: images come from the registry (CI
+builds them), so the `build:` blocks from the dev compose are intentionally
+omitted here (a git-backed Portainer stack has no build context).
 
-> **GitHub is authoritative.** Never edit this stack in Portainer. Change
-> `docker-stack.yml` here, commit, then `docker stack deploy` (or let CI redeploy).
+> **GitHub is authoritative.** Never edit this stack in Portainer's editor.
+> Change `docker-stack.yml` here, commit, redeploy.
 
 ## Services
 
 | Service | Image | Role | Ingress |
 |---------|-------|------|---------|
-| `api-v2` | `johannalves/sdk:api-v2-rust-dev` | Rust v2 API, `:3001`, runs SQLx migrations on boot | `sdk.…/api`, `*.<wl-root>/api`, `api.…` |
-| `frontend` | `johannalves/sdk:frontend-rust-dev` | Web UI, `:5173` | `sdk.…`, `*.<wl-root>` (white-label) |
+| `api-v2` | `johannalves/sdk:api-v2-rust-dev` | Rust v2 API, `:3001`, runs SQLx migrations on boot | `sdk-dev.…/api`, `wl-front.…/api`, `api-dev.…` |
+| `frontend` | `johannalves/sdk:frontend-rust-dev` | Web UI, `:5173` | `sdk-dev.…`, `wl-front.…` |
 
-Traefik routing covers three host shapes per service: the primary host, the
-white-label `HostRegexp` (`{subdomain}.<PUBLIC_WHITELABEL_ROOT_DOMAIN>`), and a
-legacy `api.` host. `api-v2` keeps higher router priority than `frontend` so
-`/api` wins over the SPA catch-all.
-
-`api-v2` runs SQLx migrations automatically on startup — no separate migration
-job. PostgreSQL (`dom360_db_sdk`) is shared with the DOM360-Agents stack.
+Three Traefik routers per service: primary host, white-label host
+(`PUBLIC_WHITELABEL_HOST`), and a legacy `api-dev.` host. `api-v2` keeps higher
+router priority than `frontend` so `/api` wins over the SPA catch-all.
+`api-v2` restarts up to 15 times (boot-time migrations can race a cold Postgres).
 
 ## Volumes
 
@@ -36,24 +34,27 @@ job. PostgreSQL (`dom360_db_sdk`) is shared with the DOM360-Agents stack.
 docker network create --driver overlay --attachable network_public   # if missing
 ```
 
-PostgreSQL reachable at `DB_HOST` (default `db`) with database `dom360_db_sdk`.
+PostgreSQL reachable at `DB_HOST` (default `db`), database `dom360_db_sdk`,
+shared with the agents stack. **Snapshot Postgres before any deploy** — `api-v2`
+auto-migrates on startup.
 
-## Deploy
+## Deploy (CLI fallback)
 
 ```bash
-cp .env.example .env && nano .env          # fill JWT_SECRET, DB_PASSWORD, API keys…
-set -a && . ./.env && set +a               # export for the stack
+cp .env.example .env && nano .env
+set -a && . ./.env && set +a
 docker stack deploy -c docker-stack.yml sdk
 ```
 
+Normal path is the git-backed Portainer stack — see [`../README.md`](../README.md#migrating-an-existing-portainer-stack-to-git).
+
 ## Release a new image
 
-Images are env-driven (`API_V2_IMAGE`, `FRONTEND_IMAGE`). To ship a build, set
-the new tag/digest in `.env` (or pin it directly in `docker-stack.yml` for an
-auditable git trail), commit, then redeploy. Prefer immutable digests in prod.
+Images are env-driven (`API_V2_IMAGE`, `FRONTEND_IMAGE`). Set the new tag/digest
+(Portainer Environment tab, or `.env` for CLI), commit if pinned in-file, redeploy.
 
 ## Notes
 
 - `AGENT_SHARED_SECRET` must match the DOM360-Agents stack (mutual auth).
-- `VITE_*` are baked into the frontend image at build time (CI); the runtime
-  env values here are fallbacks only.
+- `VITE_*` are baked into the frontend image at build time (CI); runtime values
+  here are fallbacks only.

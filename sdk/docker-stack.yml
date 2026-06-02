@@ -1,10 +1,11 @@
 version: '3.9'
 
 # ------------------------------------------------------------------------------
-# SDK swarm stack — Rust v2 backend + frontend.
-# Deploy-only: images are pulled from the registry (build happens in CI, not here).
-# api-v2 runs SQLx migrations automatically on startup.
+# SDK swarm stack (dev env) — mirrors the live Portainer stack `sdk`.
+# Rust v2 is the main service and runs SQLx migrations automatically on startup.
 # Source of truth: this file in the Stacks repo. Do NOT edit via Portainer.
+# Deploy-only: images come from the registry (CI builds), so `build:` is omitted.
+# Snapshot Postgres before any deploy.
 # ------------------------------------------------------------------------------
 
 services:
@@ -17,8 +18,8 @@ services:
       - DB_NAME=${DB_NAME:-dom360_db_sdk}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-admin}
-      - CORS_ORIGINS=${CORS_ORIGINS:-https://sdk.srcjohann.com.br,https://api.srcjohann.com.br,http://localhost:3001,http://localhost:5173}
-      - PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL:-https://api.srcjohann.com.br}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://sdk-dev.domineseunegocio.com.br,https://api-dev.domineseunegocio.com.br,http://localhost:3001,http://localhost:5173}
+      - PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL:-https://api-dev.domineseunegocio.com.br}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_TOKEN_ENCRYPTION_KEY=${GOOGLE_TOKEN_ENCRYPTION_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -26,7 +27,7 @@ services:
       - VECTORIZER_KB_ENABLED=${VECTORIZER_KB_ENABLED:-true}
       - VECTORIZER_KB_URL=${VECTORIZER_KB_URL:-http://vectorizer:15002}
       - VECTORIZER_API_KEY=${VECTORIZER_API_KEY:-}
-      - MCP_PROXY_SDK_BACKEND_URL=${MCP_PROXY_SDK_BACKEND_URL:-https://api.srcjohann.com.br}
+      - MCP_PROXY_SDK_BACKEND_URL=${MCP_PROXY_SDK_BACKEND_URL:-https://api-dev.domineseunegocio.com.br}
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
@@ -49,21 +50,21 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
-        max_attempts: 3
+        max_attempts: 15
       labels:
         traefik.enable: "true"
-        traefik.http.routers.sdk-api-v2.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk.srcjohann.com.br}`) && PathPrefix(`/api`)"
+        traefik.http.routers.sdk-api-v2.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk-dev.domineseunegocio.com.br}`) && PathPrefix(`/api`)"
         traefik.http.routers.sdk-api-v2.entrypoints: "websecure"
         traefik.http.routers.sdk-api-v2.tls.certresolver: "letsencryptresolver"
         traefik.http.routers.sdk-api-v2.priority: "1000"
         traefik.http.services.sdk-api-v2.loadbalancer.server.port: "3001"
         traefik.http.routers.sdk-api-v2.service: "sdk-api-v2"
-        traefik.http.routers.sdk-api-v2-wl.rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.${PUBLIC_WHITELABEL_ROOT_DOMAIN:-srcjohann.com.br}`) && PathPrefix(`/api`)"
+        traefik.http.routers.sdk-api-v2-wl.rule: "Host(`${PUBLIC_WHITELABEL_HOST:-wl-front.domineseunegocio.com.br}`) && PathPrefix(`/api`)"
         traefik.http.routers.sdk-api-v2-wl.entrypoints: "websecure"
         traefik.http.routers.sdk-api-v2-wl.tls.certresolver: "letsencryptresolver"
         traefik.http.routers.sdk-api-v2-wl.priority: "1000"
         traefik.http.routers.sdk-api-v2-wl.service: "sdk-api-v2"
-        traefik.http.routers.sdk-api-v2-legacy.rule: "Host(`${PUBLIC_BACKEND_HOST:-api.srcjohann.com.br}`)"
+        traefik.http.routers.sdk-api-v2-legacy.rule: "Host(`${PUBLIC_BACKEND_HOST:-api-dev.domineseunegocio.com.br}`)"
         traefik.http.routers.sdk-api-v2-legacy.entrypoints: "websecure"
         traefik.http.routers.sdk-api-v2-legacy.tls.certresolver: "letsencryptresolver"
         traefik.http.routers.sdk-api-v2-legacy.priority: "900"
@@ -91,13 +92,13 @@ services:
         max_attempts: 3
       labels:
         traefik.enable: "true"
-        traefik.http.routers.sdk-frontend.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk.srcjohann.com.br}`)"
+        traefik.http.routers.sdk-frontend.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk-dev.domineseunegocio.com.br}`)"
         traefik.http.routers.sdk-frontend.entrypoints: "websecure"
         traefik.http.routers.sdk-frontend.tls.certresolver: "letsencryptresolver"
         traefik.http.routers.sdk-frontend.priority: "100"
         traefik.http.services.sdk-frontend.loadbalancer.server.port: "5173"
         traefik.http.routers.sdk-frontend.service: "sdk-frontend"
-        traefik.http.routers.sdk-frontend-wl.rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.${PUBLIC_WHITELABEL_ROOT_DOMAIN:-srcjohann.com.br}`)"
+        traefik.http.routers.sdk-frontend-wl.rule: "Host(`${PUBLIC_WHITELABEL_HOST:-wl-front.domineseunegocio.com.br}`)"
         traefik.http.routers.sdk-frontend-wl.entrypoints: "websecure"
         traefik.http.routers.sdk-frontend-wl.tls.certresolver: "letsencryptresolver"
         traefik.http.routers.sdk-frontend-wl.priority: "100"
