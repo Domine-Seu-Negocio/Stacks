@@ -1,0 +1,192 @@
+# Prometheus monitoring stack — Docker Swarm
+# Deploy: docker stack deploy -c docker-stack.yml monitoring
+#
+# Components:
+#   prometheus    — scrape + TSDB + alerting rules (Swarm service discovery)
+#   alertmanager  — routes/dedupes/silences alerts
+#   grafana       — dashboards (Prometheus datasource provisioned)
+#   node-exporter — host metrics (global: one per node)
+#   cadvisor      — per-container metrics (global: one per node)
+#
+# Config files ship as Swarm configs from ./prometheus, ./alertmanager, ./grafana.
+
+x-restart: &restart
+  condition: on-failure
+  delay: 5s
+  max_attempts: 5
+  window: 120s
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+      - --web.external-url=https://prometheus.domineseunegocio.com.br
+    user: root
+    volumes:
+      - prometheus_data:/prometheus
+      # Native Swarm service discovery needs the Docker socket on a manager.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    configs:
+      - source: prometheus_yml
+        target: /etc/prometheus/prometheus.yml
+      - source: rules_voice
+        target: /etc/prometheus/rules/voice-agent.alerts.yml
+      - source: rules_infra
+        target: /etc/prometheus/rules/infra.alerts.yml
+      - source: rules_recording
+        target: /etc/prometheus/rules/recording.rules.yml
+    networks:
+      - network_public
+      - monitoring
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy: *restart
+      labels:
+        traefik.enable: "true"
+        traefik.docker.network: "network_public"
+        traefik.http.routers.prometheus.rule: "Host(`prometheus.domineseunegocio.com.br`)"
+        traefik.http.routers.prometheus.entrypoints: "websecure"
+        traefik.http.routers.prometheus.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.prometheus.middlewares: "prometheus-auth"
+        traefik.http.services.prometheus.loadbalancer.server.port: "9090"
+        # Basic-auth (no built-in auth). Generate: htpasswd -nbB admin '<pass>'
+        traefik.http.middlewares.prometheus-auth.basicauth.users: "${PROM_BASICAUTH:-admin:$$2y$$05$$REPLACE_ME}"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=https://alertmanager.domineseunegocio.com.br
+    volumes:
+      - alertmanager_data:/alertmanager
+    configs:
+      - source: alertmanager_yml
+        target: /etc/alertmanager/alertmanager.yml
+    secrets:
+      - source: alertmanager_slack_url
+        target: slack_url
+    networks:
+      - monitoring
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy: *restart
+      labels:
+        traefik.enable: "true"
+        traefik.docker.network: "network_public"
+        traefik.http.routers.alertmanager.rule: "Host(`alertmanager.domineseunegocio.com.br`)"
+        traefik.http.routers.alertmanager.entrypoints: "websecure"
+        traefik.http.routers.alertmanager.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.alertmanager.middlewares: "prometheus-auth"
+        traefik.http.services.alertmanager.loadbalancer.server.port: "9093"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GF_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_ADMIN_PASSWORD:?set GF_ADMIN_PASSWORD}
+      - GF_SERVER_ROOT_URL=https://grafana.domineseunegocio.com.br
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    configs:
+      - source: grafana_datasource
+        target: /etc/grafana/provisioning/datasources/datasource.yml
+      - source: grafana_dashboards_provider
+        target: /etc/grafana/provisioning/dashboards/dashboards.yml
+    networks:
+      - monitoring
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy: *restart
+      labels:
+        traefik.enable: "true"
+        traefik.docker.network: "network_public"
+        traefik.http.routers.grafana.rule: "Host(`grafana.domineseunegocio.com.br`)"
+        traefik.http.routers.grafana.entrypoints: "websecure"
+        traefik.http.routers.grafana.tls.certresolver: "letsencryptresolver"
+        traefik.http.services.grafana.loadbalancer.server.port: "3000"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - monitoring
+    deploy:
+      mode: global
+      restart_policy: *restart
+      labels:
+        prometheus.enable: "true"
+        prometheus.port: "9100"
+        prometheus.job: "node-exporter"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - monitoring
+    deploy:
+      mode: global
+      restart_policy: *restart
+      labels:
+        prometheus.enable: "true"
+        prometheus.port: "8080"
+        prometheus.job: "cadvisor"
+
+configs:
+  prometheus_yml:
+    file: ./prometheus/prometheus.yml
+  rules_voice:
+    file: ./prometheus/rules/voice-agent.alerts.yml
+  rules_infra:
+    file: ./prometheus/rules/infra.alerts.yml
+  rules_recording:
+    file: ./prometheus/rules/recording.rules.yml
+  alertmanager_yml:
+    file: ./alertmanager/alertmanager.yml
+  grafana_datasource:
+    file: ./grafana/provisioning/datasources/datasource.yml
+  grafana_dashboards_provider:
+    file: ./grafana/provisioning/dashboards/dashboards.yml
+
+secrets:
+  # Slack incoming-webhook URL for Alertmanager. Create once:
+  #   printf '%s' "$SLACK_WEBHOOK_URL" | docker secret create alertmanager_slack_url -
+  alertmanager_slack_url:
+    external: true
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+
+networks:
+  network_public:
+    external: true
+  monitoring:
+    driver: overlay
+    attachable: true

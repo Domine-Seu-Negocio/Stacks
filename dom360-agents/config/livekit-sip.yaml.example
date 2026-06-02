@@ -1,0 +1,22 @@
+# LiveKit SIP config — production (self-hosted in the Swarm).
+# Bootstrap as an external Swarm config (see README), do NOT commit the real one:
+#   cp config/livekit-sip.yaml.example config/livekit-sip.yaml   # fill in real keys
+#   docker config create dom360_livekit_sip_config config/livekit-sip.yaml
+#
+# api_key / api_secret MUST match the keys in dom360_livekit_config.
+
+api_key: REPLACE_API_KEY
+api_secret: REPLACE_API_SECRET
+
+# Reach livekit-server over the overlay network by its service alias.
+ws_url: ws://livekit-server:7880
+
+redis:
+  address: livekit-redis:6379
+
+sip_port: 5060
+rtp_port: 10000-10100
+use_external_ip: true
+
+logging:
+  level: info

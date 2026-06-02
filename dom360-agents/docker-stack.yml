@@ -1,0 +1,280 @@
+# ------------------------------------------------------------------------------
+# DOM360-Agents swarm stack — SDR/Copilot API + voice worker + self-hosted
+# LiveKit (server + SIP + redis).
+# Source of truth: this file in the Stacks repo. Do NOT edit via Portainer.
+# Image is pinned by digest — bump it here (a git commit), then redeploy.
+# The livekit_config / livekit_sip_config are external Swarm configs: bootstrap
+# them once from config/*.example (see README) before the first deploy.
+# ------------------------------------------------------------------------------
+
+services:
+  sdr-agent:
+    image: deselles/sdr-agent:e08639b39a6adf97c5ad7dddc7714ec5cb57022f
+    command: ["uv", "run", "python", "main.py", "api"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/mcp >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+      # PostgreSQL Database Configuration
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-dom360_db_sdk}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+
+      # LLM / cloud providers
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_KB_ID=${BEDROCK_KB_ID:-HNFLQEINAK}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+
+      # Knowledge Base
+      - KB_PROVIDER=vectorizer
+      - KB_MAX_RESULTS=5
+      - KB_SEARCH_TYPE=SEMANTIC
+
+      # SDK Backend
+      - SDK_BACKEND_URL=${SDK_BACKEND_URL:-https://api-dev.domineseunegocio.com.br}
+      - SDK_API_TOKEN=${SDK_API_TOKEN:-}
+
+      # Shared secret for SDK ↔ Agents mutual authentication
+      - AGENT_SHARED_SECRET=${AGENT_SHARED_SECRET}
+
+      # Self-hosted LiveKit
+      - LIVEKIT_URL=ws://livekit-server:7880
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-wss://agente-dev.domineseunegocio.com.br/livekit}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_SIP_OUTBOUND_TRUNK_ID=${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:-}
+
+    networks:
+      network_public:
+        aliases:
+          - sdr-agent
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.sdr-agent.rule: "Host(`agente-dev.domineseunegocio.com.br`)"
+        traefik.http.routers.sdr-agent.entrypoints: "websecure"
+        traefik.http.routers.sdr-agent.tls.certresolver: "letsencryptresolver"
+        traefik.http.services.sdr-agent.loadbalancer.server.port: "8000"
+        traefik.http.routers.sdr-agent.service: "sdr-agent"
+        traefik.http.middlewares.sdr-agent-stripprefix.stripprefix.prefixes: "/"
+        traefik.http.routers.sdr-agent.middlewares: "sdr-agent-stripprefix"
+
+  voice-agent:
+    image: deselles/sdr-agent:e08639b39a6adf97c5ad7dddc7714ec5cb57022f
+    command: ["uv", "run", "python", "-m", "src.core.voice.livekit.server", "start", "--drain-timeout", "600"]
+    # Drain active calls on deploy/restart before SIGKILL. Voice needs a long grace
+    # (LiveKit recommends 10+ min); must be >= --drain-timeout above.
+    stop_grace_period: 600s
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+      # PostgreSQL Database Configuration
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-dom360_db_sdk}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+
+      # LLM / cloud providers
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_KB_ID=${BEDROCK_KB_ID:-HNFLQEINAK}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+
+      # Knowledge Base
+      - KB_PROVIDER=vectorizer
+      - KB_MAX_RESULTS=5
+      - KB_SEARCH_TYPE=SEMANTIC
+
+      # SDK Backend / SDK Voice bridge
+      - SDK_BACKEND_URL=${SDK_BACKEND_URL:-https://api-dev.domineseunegocio.com.br}
+      - SDK_API_TOKEN=${SDK_API_TOKEN:-}
+      - SDK_VOICE_ENABLED=true
+      - SDK_VOICE_TENANT_ID=${SDK_VOICE_TENANT_ID:-0}
+      - SDK_VOICE_INBOX_ID=${SDK_VOICE_INBOX_ID:-0}
+
+      # Shared secret for SDK ↔ Agents mutual authentication
+      - AGENT_SHARED_SECRET=${AGENT_SHARED_SECRET}
+
+      # Self-hosted LiveKit
+      - LIVEKIT_URL=ws://livekit-server:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - LIVEKIT_SIP_OUTBOUND_TRUNK_ID=${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:-}
+
+      # SIP mode: native (LiveKit SIP trunks) or legacy (pyVoIP bridge)
+      - SIP_MODE=${SIP_MODE:-native}
+      - VOICE_IDLE_PROCESSES=${VOICE_IDLE_PROCESSES:-1}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # SDK Voice API token (must be sdk_* token, NOT a user JWT)
+      - SDK_VOICE_API_TOKEN=${SDK_VOICE_API_TOKEN:-}
+
+      # SIP providers
+      - WAVOIP_SIP_SERVER=${WAVOIP_SIP_SERVER:-sipv2.wavoip.com}
+      - WAVOIP_SIP_PORT=${WAVOIP_SIP_PORT:-5060}
+      - WAVOIP_DEVICE_TOKEN=${WAVOIP_DEVICE_TOKEN:-}
+      - WAVOIP_SIP_USERNAME=${WAVOIP_SIP_USERNAME}
+      - WAVOIP_SIP_PASSWORD=${WAVOIP_SIP_PASSWORD}
+      - KROLIK_SIP_SERVER=${KROLIK_SIP_SERVER:-54.232.108.90}
+      - KROLIK_SIP_PORT=${KROLIK_SIP_PORT:-5060}
+      - KROLIK_SIP_USERNAME=${KROLIK_SIP_USERNAME:-}
+      - KROLIK_SIP_PASSWORD=${KROLIK_SIP_PASSWORD:-}
+
+    networks:
+      network_public:
+        aliases:
+          - voice-agent
+    deploy:
+      mode: replicated
+      # ≥2 so LiveKit can re-dispatch to a spare worker when one drains/crashes.
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        # Start the new worker before stopping the old one (no dispatch gap).
+        order: start-first
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 1G
+
+  livekit-server:
+    image: livekit/livekit-server:latest
+    command: ["--config", "/etc/livekit.yaml", "--bind", "0.0.0.0"]
+    configs:
+      - source: livekit_config
+        target: /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    networks:
+      network_public:
+        aliases:
+          - livekit-server
+    deploy:
+      mode: replicated
+      replicas: 1
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.sdr-livekit.rule: "Host(`agente-dev.domineseunegocio.com.br`) && PathPrefix(`/livekit`)"
+        traefik.http.routers.sdr-livekit.entrypoints: "websecure"
+        traefik.http.routers.sdr-livekit.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdr-livekit.service: "sdr-livekit"
+        traefik.http.routers.sdr-livekit.priority: "10000"
+        traefik.http.routers.sdr-livekit.middlewares: "sdr-livekit-stripprefix"
+        traefik.http.middlewares.sdr-livekit-stripprefix.stripprefix.prefixes: "/livekit"
+        traefik.http.services.sdr-livekit.loadbalancer.server.port: "7880"
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  livekit-sip:
+    image: livekit/sip:latest
+    configs:
+      - source: livekit_sip_config
+        target: /sip/config.yaml
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "10000-10100:10000-10100/udp"
+    environment:
+      - LIVEKIT_URL=ws://livekit-server:7880
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
+      - SIP_LOGGING_LEVEL=info
+    networks:
+      network_public:
+        aliases:
+          - livekit-sip
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  livekit-redis:
+    image: redis:7-alpine
+    # AOF (appendonly) so SIP trunk/dispatch state survives a restart between
+    # RDB snapshots — without it, trunks "disappear" (see ADR 003).
+    command: redis-server --appendonly yes --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - livekit_redis_data:/data
+    networks:
+      network_public:
+        aliases:
+          - livekit-redis
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+configs:
+  livekit_config:
+    external: true
+    name: dom360_livekit_config
+  livekit_sip_config:
+    external: true
+    name: dom360_livekit_sip_config
+
+volumes:
+  livekit_redis_data:
+
+networks:
+  network_public:
+    external: true

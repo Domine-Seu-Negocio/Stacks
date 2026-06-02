@@ -1,0 +1,56 @@
+# Voice agent alerts. The `up`-based rules work as soon as the voice-agent is
+# scraped; the app-metric rules (sip_registration_up, worker_restarts_total,
+# voice_* latencies) activate once the worker exposes /metrics — see
+# DOM360-Agents Phase C 3.3 (ADR 002).
+groups:
+  - name: voice-agent
+    rules:
+      - alert: VoiceAgentDown
+        expr: up{job=~"voice-agent.*|.*voice-agent"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: voice
+        annotations:
+          summary: "voice-agent target down ({{ $labels.instance }})"
+          description: "A voice-agent task has been unscrapable for >1m."
+
+      - alert: VoiceAgentNoHealthyWorkers
+        expr: count(up{job=~"voice-agent.*|.*voice-agent"} == 1) < 1
+        for: 1m
+        labels:
+          severity: critical
+          team: voice
+        annotations:
+          summary: "No healthy voice-agent workers"
+          description: "LiveKit cannot dispatch calls — zero workers are up."
+
+      - alert: SIPRegistrationDown
+        expr: sip_registration_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: voice
+        annotations:
+          summary: "SIP registration down on {{ $labels.instance }}"
+          description: "Worker is alive but SIP is not registered — inbound/outbound calls will fail (the 'false-healthy' failure mode)."
+
+      - alert: VoiceWorkerCrashLooping
+        expr: increase(worker_restarts_total[10m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          team: voice
+        annotations:
+          summary: "voice-agent crash-looping ({{ $labels.instance }})"
+          description: "{{ $value }} restarts in 10m."
+
+      - alert: VoiceHighActiveCallsSaturation
+        expr: voice_active_calls > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: voice
+        annotations:
+          summary: "voice-agent near capacity ({{ $value }} active calls)"
+          description: "Approaching the ~10-25 jobs/worker envelope; consider scaling out."

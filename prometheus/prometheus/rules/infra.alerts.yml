@@ -1,0 +1,58 @@
+groups:
+  - name: infra
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Target down: {{ $labels.job }} / {{ $labels.instance }}"
+          description: "Prometheus has failed to scrape this target for >2m."
+
+      - alert: NodeHighCpu
+        expr: instance:node_cpu_utilization:rate5m > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.node }}"
+          description: "CPU utilization >90% for 10m."
+
+      - alert: NodeHighMemory
+        expr: instance:node_memory_utilization:ratio > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory on {{ $labels.node }}"
+          description: "Memory utilization >90% for 10m."
+
+      - alert: NodeDiskFillingUp
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 24 * 3600) < 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk filling up on {{ $labels.node }} ({{ $labels.mountpoint }})"
+          description: "Filesystem predicted to run out of space within 24h."
+
+      - alert: RedisDown
+        expr: up{job=~"redis.*|.*redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: voice
+        annotations:
+          summary: "Redis down ({{ $labels.instance }})"
+          description: "LiveKit SIP coordination depends on Redis — trunks/dispatch may fail."
+
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus config reload failed"
+          description: "Last config reload was unsuccessful."

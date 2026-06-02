@@ -1,0 +1,31 @@
+# LiveKit Server config — production (self-hosted in the Swarm).
+# Bootstrap as an external Swarm config (see README), do NOT commit the real one:
+#   cp config/livekit.yaml.example config/livekit.yaml   # fill in real keys
+#   docker config create dom360_livekit_config config/livekit.yaml
+# Rotate by `docker config rm` + re-create + `docker service update`.
+#
+# Generate keys with: docker run --rm livekit/livekit-server generate-keys
+
+port: 7880
+
+rtc:
+  port_range_start: 50000
+  port_range_end: 50100
+  tcp_port: 7881
+  # Production: STUN to discover the public IP.
+  use_external_ip: true
+
+# Coordination + SIP service state. Stack alias "livekit-redis", AOF-enabled.
+redis:
+  address: livekit-redis:6379
+
+# API keys — REPLACE before creating the config.
+keys:
+  REPLACE_API_KEY: REPLACE_API_SECRET
+
+logging:
+  level: info
+  pion_level: warn
+
+turn:
+  enabled: false

@@ -1,0 +1,75 @@
+# Prometheus config — Docker Swarm native service discovery.
+#
+# Services opt into scraping with deploy labels:
+#   prometheus.enable: "true"
+#   prometheus.port:   "<metrics port>"
+#   prometheus.job:    "<job name>"          # optional, defaults to service name
+#   prometheus.path:   "/metrics"            # optional, defaults to /metrics
+#
+# This keeps app stacks decoupled: add the labels to a service and it appears
+# here with no Prometheus restart needed (SD is dynamic).
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: dom360
+    env: production
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Prometheus itself.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Everything else: Swarm tasks that opted in via labels.
+  - job_name: swarm-tasks
+    dockerswarm_sd_configs:
+      - host: unix:///var/run/docker.sock
+        role: tasks
+    relabel_configs:
+      # Only scrape opted-in services.
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_enable]
+        regex: "true"
+        action: keep
+      # Only running tasks.
+      - source_labels: [__meta_dockerswarm_task_desired_state]
+        regex: running
+        action: keep
+      # Keep a single reachable network (drop ingress + extras → no duplicates).
+      - source_labels: [__meta_dockerswarm_network_name]
+        regex: (network_public|monitoring)
+        action: keep
+      # Rewrite the target to <task-ip>:<prometheus.port label>.
+      - source_labels: [__address__, __meta_dockerswarm_service_label_prometheus_port]
+        regex: '([^:]+)(?::\d+)?;(\d+)'
+        replacement: '$1:$2'
+        target_label: __address__
+      # Metrics path (default /metrics).
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_path]
+        regex: (.+)
+        target_label: __metrics_path__
+      # job = label, or fall back to the service name.
+      - source_labels: [__meta_dockerswarm_service_label_prometheus_job]
+        regex: (.+)
+        target_label: job
+      - source_labels: [job, __meta_dockerswarm_service_name]
+        regex: ';(.+)'
+        replacement: '$1'
+        target_label: job
+      # Useful identity labels.
+      - source_labels: [__meta_dockerswarm_node_hostname]
+        target_label: node
+      - source_labels: [__meta_dockerswarm_service_name]
+        target_label: service
+      - source_labels: [__meta_dockerswarm_task_id]
+        target_label: task

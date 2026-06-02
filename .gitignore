@@ -1,0 +1,8 @@
+# Real secrets — never commit. Only *.example are tracked.
+.env
+*/.env
+**/.env
+
+# Real LiveKit configs (secret-bearing); only *.example are tracked.
+dom360-agents/config/livekit.yaml
+dom360-agents/config/livekit-sip.yaml

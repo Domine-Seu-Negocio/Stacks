@@ -1,0 +1,114 @@
+version: '3.9'
+
+# ------------------------------------------------------------------------------
+# SDK swarm stack — Rust v2 backend + frontend.
+# Deploy-only: images are pulled from the registry (build happens in CI, not here).
+# api-v2 runs SQLx migrations automatically on startup.
+# Source of truth: this file in the Stacks repo. Do NOT edit via Portainer.
+# ------------------------------------------------------------------------------
+
+services:
+  api-v2:
+    image: ${API_V2_IMAGE:-johannalves/sdk:api-v2-rust-dev}
+    environment:
+      - SDK_V2_BIND_ADDR=${SDK_V2_BIND_ADDR:-0.0.0.0:3001}
+      - DB_HOST=${DB_HOST:-db}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-dom360_db_sdk}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-admin}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://sdk.srcjohann.com.br,https://api.srcjohann.com.br,http://localhost:3001,http://localhost:5173}
+      - PUBLIC_BACKEND_URL=${PUBLIC_BACKEND_URL:-https://api.srcjohann.com.br}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_TOKEN_ENCRYPTION_KEY=${GOOGLE_TOKEN_ENCRYPTION_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - VECTORIZER_KB_ENABLED=${VECTORIZER_KB_ENABLED:-true}
+      - VECTORIZER_KB_URL=${VECTORIZER_KB_URL:-http://vectorizer:15002}
+      - VECTORIZER_API_KEY=${VECTORIZER_API_KEY:-}
+      - MCP_PROXY_SDK_BACKEND_URL=${MCP_PROXY_SDK_BACKEND_URL:-https://api.srcjohann.com.br}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - AGENT_API_URL=${AGENT_API_URL:-http://sdr-agent:8000}
+      - AGENTS_BASE_URL=${AGENTS_BASE_URL:-http://sdr-agent:8000}
+      - AGENT_SHARED_SECRET=${AGENT_SHARED_SECRET}
+      - BRANDING_ASSETS_DIR=${BRANDING_ASSETS_DIR:-/home/sdk/branding-assets}
+      - RUST_LOG=${RUST_LOG:-info,dom360_sdk_v2=info}
+    volumes:
+      - vectorizer_kb_data:/data/vectorizer_kb
+      - sdk_branding_assets:/home/sdk/branding-assets
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.sdk-api-v2.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk.srcjohann.com.br}`) && PathPrefix(`/api`)"
+        traefik.http.routers.sdk-api-v2.entrypoints: "websecure"
+        traefik.http.routers.sdk-api-v2.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdk-api-v2.priority: "1000"
+        traefik.http.services.sdk-api-v2.loadbalancer.server.port: "3001"
+        traefik.http.routers.sdk-api-v2.service: "sdk-api-v2"
+        traefik.http.routers.sdk-api-v2-wl.rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.${PUBLIC_WHITELABEL_ROOT_DOMAIN:-srcjohann.com.br}`) && PathPrefix(`/api`)"
+        traefik.http.routers.sdk-api-v2-wl.entrypoints: "websecure"
+        traefik.http.routers.sdk-api-v2-wl.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdk-api-v2-wl.priority: "1000"
+        traefik.http.routers.sdk-api-v2-wl.service: "sdk-api-v2"
+        traefik.http.routers.sdk-api-v2-legacy.rule: "Host(`${PUBLIC_BACKEND_HOST:-api.srcjohann.com.br}`)"
+        traefik.http.routers.sdk-api-v2-legacy.entrypoints: "websecure"
+        traefik.http.routers.sdk-api-v2-legacy.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdk-api-v2-legacy.priority: "900"
+        traefik.http.routers.sdk-api-v2-legacy.service: "sdk-api-v2"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-johannalves/sdk:frontend-rust-dev}
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=${FRONTEND_BIND_PORT:-5173}
+      - VITE_API_URL=${VITE_API_URL:-}
+      - VITE_API_V2_URL=${VITE_API_V2_URL:-}
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-}
+    networks:
+      - network_public
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        traefik.enable: "true"
+        traefik.http.routers.sdk-frontend.rule: "Host(`${PUBLIC_FRONTEND_HOST:-sdk.srcjohann.com.br}`)"
+        traefik.http.routers.sdk-frontend.entrypoints: "websecure"
+        traefik.http.routers.sdk-frontend.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdk-frontend.priority: "100"
+        traefik.http.services.sdk-frontend.loadbalancer.server.port: "5173"
+        traefik.http.routers.sdk-frontend.service: "sdk-frontend"
+        traefik.http.routers.sdk-frontend-wl.rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.${PUBLIC_WHITELABEL_ROOT_DOMAIN:-srcjohann.com.br}`)"
+        traefik.http.routers.sdk-frontend-wl.entrypoints: "websecure"
+        traefik.http.routers.sdk-frontend-wl.tls.certresolver: "letsencryptresolver"
+        traefik.http.routers.sdk-frontend-wl.priority: "100"
+        traefik.http.routers.sdk-frontend-wl.service: "sdk-frontend"
+
+networks:
+  network_public:
+    external: true
+
+volumes:
+  vectorizer_kb_data:
+    driver: local
+  sdk_branding_assets:
+    driver: local
