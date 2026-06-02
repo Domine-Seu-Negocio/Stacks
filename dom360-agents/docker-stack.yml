@@ -18,7 +18,7 @@
 
 services:
   sdr-agent:
-    image: johannalves/agents:sdr-rust-dev-20260521-601d79c-stdout
+    image: deselles/sdr-agent:09d2c5d7529df9dbb0645a545137c989ae311535
     command: ["uv", "run", "python", "main.py", "api"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health/mcp >/dev/null || exit 1"]
@@ -90,7 +90,7 @@ services:
         traefik.http.routers.sdr-agent.middlewares: "sdr-agent-stripprefix"
 
   voice-agent:
-    image: johannalves/agents:sdr-rust-dev-20260521-601d79c-stdout
+    image: deselles/sdr-agent:09d2c5d7529df9dbb0645a545137c989ae311535
     command: ["uv", "run", "python", "-m", "src.core.voice.livekit.server", "start"]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8081/ >/dev/null || exit 1"]
