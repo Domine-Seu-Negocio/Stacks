@@ -1068,7 +1068,7 @@ services:
 configs:
   livekit_config:
     external: true
-    name: dom360_livekit_config_20260602_nat
+    name: dom360_livekit_config_20260602_nodeip
   livekit_sip_config:
     external: true
     name: dom360_livekit_sip_config
