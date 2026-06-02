@@ -1,25 +1,30 @@
-# LiveKit Server config — production (self-hosted in the Swarm).
-# Bootstrap as an external Swarm config (see README), do NOT commit the real one:
-#   cp config/livekit.yaml.example config/livekit.yaml   # fill in real keys
-#   docker config create dom360_livekit_config config/livekit.yaml
-# Rotate by `docker config rm` + re-create + `docker service update`.
+# LiveKit Server config — production template.
+# Bootstrap as an immutable external Swarm config (configs can't be edited —
+# create a new versioned name and point the stack at it):
+#   cp config/livekit.yaml.example config/livekit.yaml   # fill real keys + IP
+#   docker config create dom360_livekit_config_<date> config/livekit.yaml
+#   # then set configs.livekit_config.name in docker-stack.yml and redeploy
 #
-# Generate keys with: docker run --rm livekit/livekit-server generate-keys
+# Generate keys: docker run --rm livekit/livekit-server generate-keys
 
 port: 7880
 
 rtc:
-  port_range_start: 50000
+  port_range_start: 50000      # MUST match the published 50000-50100/udp host ports
   port_range_end: 50100
-  tcp_port: 7881
-  # Production: STUN to discover the public IP.
-  use_external_ip: true
+  tcp_port: 7881               # ICE/TCP fallback for restrictive NAT (published, mode:host)
+  # Single-node Swarm with a static public IP: pin the advertised media IP via
+  # 1:1 NAT and disable STUN rewriting. This avoids overlapping ICE candidates
+  # (the "overlapping address rewrite rule" warning) that cause intermittent
+  # media — calls connecting sometimes and dropping mid-session. Local interface
+  # candidates are still gathered, so the in-overlay worker uses the local path.
+  use_external_ip: false
+  nat_1_to_1_ips:
+    - REPLACE_NODE_PUBLIC_IP
 
-# Coordination + SIP service state. Stack alias "livekit-redis", AOF-enabled.
 redis:
   address: livekit-redis:6379
 
-# API keys — REPLACE before creating the config.
 keys:
   REPLACE_API_KEY: REPLACE_API_SECRET
 

@@ -9,7 +9,7 @@
 #   A `range:range/udp` short form would default to ingress and break media.
 #
 # External Swarm configs (bootstrap once, see README; secret-bearing → not in git):
-#   livekit_config     -> dom360_livekit_config_20260514_50100
+#   livekit_config     -> dom360_livekit_config_20260602_nat (nat_1_to_1 media fix)
 #   livekit_sip_config -> dom360_livekit_sip_config
 #
 # Image is pinned by tag — bump it on sdr-agent AND voice-agent (same image),
@@ -61,6 +61,11 @@ services:
 
       # Self-hosted LiveKit
       - LIVEKIT_URL=ws://livekit-server:7880
+      # Public URL handed to the browser by /voice/room. MUST be the external
+      # wss endpoint (Traefik /livekit) — without it the handler falls back to
+      # the internal LIVEKIT_URL (ws://livekit-server:7880), which the browser
+      # cannot reach (and ws:// on an https page is mixed-content blocked).
+      - LIVEKIT_PUBLIC_URL=${LIVEKIT_PUBLIC_URL:-wss://agente-dev.domineseunegocio.com.br/livekit}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET}
       - LIVEKIT_SIP_OUTBOUND_TRUNK_ID=${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:-}
@@ -1063,7 +1068,7 @@ services:
 configs:
   livekit_config:
     external: true
-    name: dom360_livekit_config_20260514_50100
+    name: dom360_livekit_config_20260602_nat
   livekit_sip_config:
     external: true
     name: dom360_livekit_sip_config
